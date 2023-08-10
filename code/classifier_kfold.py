@@ -31,7 +31,7 @@ df_test.to_csv('test_bert.csv')
 
 
 #Instantiate classifier
-loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)  # loss function used
+loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)  # loss function used
 metrics = tf.metrics.BinaryAccuracy()  # accuracy metrics
 
 def build_classifier_model(loss,metrics,init_lr=0.001):
@@ -39,6 +39,9 @@ def build_classifier_model(loss,metrics,init_lr=0.001):
   preprocessing_layer = hub.KerasLayer('https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3', name='preprocessing')  # preprocessing
   encoder_inputs = preprocessing_layer(text_input)  # preprocessed inputs to the encoder
   encoder = hub.KerasLayer('https://tfhub.dev/tensorflow/small_bert/bert_en_uncased_L-6_H-128_A-2/1', trainable=True, name='BERT_encoder')  # encoder
+  encoder = hub.KerasLayer(
+    "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/4",
+    trainable=True, name='BERT_encoder')
   outputs = encoder(encoder_inputs)  # run through BERT model
   net = outputs['pooled_output'] # output of BERT encoder
   net = tf.keras.layers.Dense(1, activation='sigmoid', name='classifier')(net)  # classification layer
@@ -56,7 +59,8 @@ tf.random.set_seed(12345)
 epochs = 3
 
 batch_size = 16
-init_lr = 0.00025
+init_lr = 0.00025 #small BERT
+#init_lr = 5e-5
 
 AUTOTUNE = tf.data.AUTOTUNE
 # training and validation dataset
@@ -65,6 +69,8 @@ X_train = np.squeeze(df_train['cleaned_text'].to_numpy())
 y_train = np.squeeze(df_train['is_misinfo'].to_numpy())
 kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 fold_metrics = []
+
+min_val_loss = 1e12
 
 for fold, (train_indices, val_indices) in enumerate(kfold.split(X_train, y_train)):
     print(f"Fold {fold + 1}")
@@ -83,6 +89,10 @@ for fold, (train_indices, val_indices) in enumerate(kfold.split(X_train, y_train
     val_loss, val_accuracy = model.evaluate(X_val_fold, y_val_fold, verbose=0)
     fold_metrics.append((val_loss, val_accuracy))
 
+    if val_loss<min_val_loss:
+       min_val_loss = val_loss
+       final_classifier = model
+
 # Calculate and print average metrics across folds
 avg_val_loss = np.mean([metrics[0] for metrics in fold_metrics])
 avg_val_accuracy = np.mean([metrics[1] for metrics in fold_metrics])
@@ -91,7 +101,6 @@ print("Average Validation Loss:", avg_val_loss)
 print("Average Validation Accuracy:", avg_val_accuracy)
 
 if 1==1:
-  final_classifier = model
   #Test results
   df_test = pd.read_csv('test_bert.csv')
 
